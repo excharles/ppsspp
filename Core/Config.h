@@ -784,7 +784,7 @@ enum class AdhocDataMode {
 	AemuPostoffice,
 };
 
-struct AdhocServerListEntry{
+struct AdhocServerListEntry {
 	std::string name;
 	std::string hostname;
 	std::string community_link;

@@ -4,6 +4,86 @@
 #include "Common/UI/Root.h"
 #include "Common/StringUtils.h"
 
+class AdhocServerRow : public UI::LinearLayout {
+public:
+	AdhocServerRow(std::string *value, const AdhocServerListEntry &entry, UI::LayoutParams *layoutParams = nullptr);
+
+	void GetContentDimensions(const UIContext &dc, float &w, float &h) const override {
+		w = 500; h = 90;
+	}
+
+	void Draw(UIContext &dc) override {
+		dc.FillRect(dc.GetTheme().itemStyle.background, bounds_);
+		if (*value_ == entry_.hostname) {
+			// TODO: Make this highlight themable
+			// dc.FillRect(UI::Drawable(0xCCFFFFFF), GetBounds());
+		}
+		LinearLayout::Draw(dc);
+	}
+
+	bool Touch(const TouchInput &input) override {
+		using namespace UI;
+		if (UI::LinearLayout::Touch(input)) {
+			return true;
+		}
+		if (bounds_.Contains(input.x, input.y) && (input.flags & TouchInputFlags::DOWN)) {
+			EventParams e;
+			e.v = this;
+			OnSelected.Trigger(e);
+			return true;
+		}
+		return false;
+	}
+
+	UI::Event OnSelected;
+	std::string *value_;
+	AdhocServerListEntry entry_;
+};
+
+static UI::View *CreateLinkButton(std::string url) {
+	using namespace UI;
+
+	ImageID icon = ImageID("I_LINK_OUT_QUESTION");
+
+	if (startsWith(url, "https://discord")) {
+		icon = ImageID("I_LOGO_DISCORD");
+	}
+
+	Choice *choice = new Choice(icon, new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT));
+	choice->OnClick.Add([url](UI::EventParams &) {
+		System_LaunchUrl(LaunchUrlType::BROWSER_URL, url);
+	});
+	return choice;
+}
+
+AdhocServerRow::AdhocServerRow(std::string *value, const AdhocServerListEntry &entry, UI::LayoutParams *layoutParams)
+	: UI::LinearLayout(ORIENT_HORIZONTAL, new UI::LinearLayoutParams(UI::FILL_PARENT, UI::WRAP_CONTENT, UI::Margins(5))), value_(value), entry_(entry) {
+	using namespace UI;
+
+	int number = 0;
+
+	// TEMP HACK: use some other view, like a Choice, themed differently to enable keyboard access to selection.
+
+	LinearLayout *lines = Add(new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(Margins(5.0f))));
+	lines->SetSpacing(2.0f);
+	lines->Add(new TextView(entry.name));
+	lines->Add(new TextView(entry.hostname))->SetTextSize(TextSize::Small)->SetWordWrap();
+	lines->Add(new TextView(entry.note))->SetTextSize(TextSize::Tiny)->SetWordWrap();
+
+	Add(new Spacer(0.0f, new LinearLayoutParams(1.0f)));
+
+	if (entry.mode == AdhocDataMode::AemuPostoffice) {
+		Add(new TextView(T(I18NCat::DIALOG, "(Relay)")))->SetTextSize(TextSize::Small);
+	}
+
+	Add(CreateLinkButton(entry.community_link));
+
+	Add(new Choice("Use", new LinearLayoutParams(WRAP_CONTENT, WRAP_CONTENT)))->OnClick.Add([this, entry](UI::EventParams &e) {
+		e.v = this;
+		OnSelected.Trigger(e);
+	});
+}
+
 AdhocServerScreen::AdhocServerScreen(std::string *value, std::string_view title)
 	: UI::PopupScreen(title, T(I18NCat::DIALOG, "OK"), T(I18NCat::DIALOG, "Cancel")), value_(value) {
 	resolver_ = std::thread([](AdhocServerScreen *thiz) {
@@ -36,44 +116,56 @@ void AdhocServerScreen::CreatePopupContents(UI::ViewGroup *parent) {
 	auto di = GetI18NCategory(I18NCat::DIALOG);
 	auto n = GetI18NCategory(I18NCat::NETWORKING);
 
-	PopupTextInputChoice *textInputChoice = parent->Add(new PopupTextInputChoice(GetRequesterToken(), &editValue_, n->T("Hostname"), "", 256, screenManager()));
+	PopupTextInputChoice *textInputChoice = parent->Add(new PopupTextInputChoice(GetRequesterToken(), &editValue_, n->T("Hostname"), "", 450, screenManager()));
 
-	std::vector<std::string> listIP;
+	std::vector<AdhocServerListEntry> entries;
+
 	for (const auto &item : listItems_) {
-		listIP.push_back(item.hostname);
+		entries.push_back(item);
 	}
 
-	// Add non-editable items
-	listIP.push_back("localhost");
+	// Fake entry for localhost.
+	AdhocServerListEntry localhostEntry;
+	localhostEntry.hostname = "localhost";
+	localhostEntry.name = "localhost";
+	entries.push_back(localhostEntry);
 
 	parent->Add(new Spacer(5.0f));
 
+	std::vector<std::string> listIP;
 	net::GetLocalIP4List(listIP);
 
 	ScrollView *scrollView = new ScrollView(ORIENT_VERTICAL, new LinearLayoutParams(1.0f));
 	LinearLayout *innerView = new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT));
 	innerView->SetSpacing(5.0f);
-	if (listIP.size() > 0) {
-		for (const auto& label : listIP) {
-			// Filter out IP prefixed with "127." and "169.254." also "0." since they can be redundant or unusable
-			if (label.find("127.") != 0 && label.find("169.254.") != 0 && label.find("0.") != 0) {
-				auto button = innerView->Add(new Button(label, new LinearLayoutParams(FILL_PARENT, WRAP_CONTENT)));
-				button->OnClick.Add([this](UI::EventParams &e) {
-					std::string value = e.v->Tag();
-					if (!value.empty()) {
-						editValue_ = value;
-						// TODO: Let's change this to an actual button later.
-						System_CopyStringToClipboard(value);
-					}
-				});
-				button->SetTag(label);
-			}
+	for (const auto &label : listIP) {
+		// Filter out IP prefixed with "127." and "169.254." also "0." since they can be redundant or unusable
+		if (label.find("127.") != 0 && label.find("169.254.") != 0 && label.find("0.") != 0) {
+			// Make a fake entry for this local IP address.
+			AdhocServerListEntry entry;
+			entry.hostname = label;
+			entries.push_back(entry);
 		}
+	}
+
+	for (const auto &entry : entries) {
+		AdhocServerRow *row = new AdhocServerRow(&editValue_, entry);
+		innerView->Add(row);
+		row->OnSelected.Add([this](UI::EventParams &e) {
+			std::string value = e.v->Tag();
+			if (!value.empty()) {
+				editValue_ = value;
+				// TODO: Let's change this to an actual button later.
+				System_CopyStringToClipboard(value);
+			}
+		});
+		row->SetTag(entry.hostname);
 	}
 
 	scrollView->Add(innerView);
 	parent->Add(scrollView);
-	listIP.clear(); listIP.shrink_to_fit();
+	listIP.clear();
+	listIP.shrink_to_fit();
 
 	progressView_ = parent->Add(new NoticeView(NoticeLevel::INFO, n->T("Validating address..."), "", new LinearLayoutParams(Margins(0, 5, 0, 0))));
 	progressView_->SetVisibility(UI::V_GONE);
