@@ -22,6 +22,7 @@ public:
 protected:
 	void OnCompleted(DialogResult result) override;
 	bool CanComplete(DialogResult result) override;
+	virtual UI::Size PopupWidth() const { return 650; }
 
 private:
 	void ResolverThread();

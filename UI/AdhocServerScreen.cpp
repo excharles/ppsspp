@@ -16,7 +16,7 @@ public:
 		dc.FillRect(dc.GetTheme().itemStyle.background, bounds_);
 		if (*value_ == entry_.hostname) {
 			// TODO: Make this highlight themable
-			// dc.FillRect(UI::Drawable(0xCCFFFFFF), GetBounds());
+			dc.FillRect(UI::Drawable(0x30FFFFFF), GetBounds());
 		}
 		LinearLayout::Draw(dc);
 	}
@@ -57,23 +57,24 @@ static UI::View *CreateLinkButton(std::string url) {
 }
 
 AdhocServerRow::AdhocServerRow(std::string *value, const AdhocServerListEntry &entry, UI::LayoutParams *layoutParams)
-	: UI::LinearLayout(ORIENT_HORIZONTAL, new UI::LinearLayoutParams(UI::FILL_PARENT, UI::WRAP_CONTENT, UI::Margins(5))), value_(value), entry_(entry) {
+	: UI::LinearLayout(ORIENT_HORIZONTAL, new UI::LinearLayoutParams(UI::FILL_PARENT, UI::WRAP_CONTENT, UI::Margins(5.0f, 0.0f))), value_(value), entry_(entry) {
 	using namespace UI;
 
 	int number = 0;
 
 	// TEMP HACK: use some other view, like a Choice, themed differently to enable keyboard access to selection.
 
-	LinearLayout *lines = Add(new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(Margins(5.0f))));
-	lines->SetSpacing(2.0f);
+	LinearLayout *lines = Add(new LinearLayout(ORIENT_VERTICAL, new LinearLayoutParams(Margins(5.0f, 5.0f))));
+	lines->SetSpacing(0.0f);
 	lines->Add(new TextView(entry.name));
 	lines->Add(new TextView(entry.hostname))->SetTextSize(TextSize::Small)->SetWordWrap();
 	lines->Add(new TextView(entry.note))->SetTextSize(TextSize::Tiny)->SetWordWrap();
 
-	Add(new Spacer(0.0f, new LinearLayoutParams(1.0f)));
+	Add(new Spacer(0.0f, new LinearLayoutParams(1.0f, Margins(0.0f, 5.0f))));
 
 	if (entry.mode == AdhocDataMode::AemuPostoffice) {
-		Add(new TextView(T(I18NCat::DIALOG, "(Relay)")))->SetTextSize(TextSize::Small);
+		auto di = GetI18NCategory(I18NCat::DIALOG);
+		Add(new TextView(di->T("Relay")))->SetTextSize(TextSize::Small);
 	}
 
 	Add(CreateLinkButton(entry.community_link));
